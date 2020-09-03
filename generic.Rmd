@@ -1,0 +1,175 @@
+---
+title: ''
+author: ''
+date: ''
+output: 
+  html_document:
+    df_print: paged
+    keep_md: true
+  word_document:
+    reference_docx: style.1.docx
+---
+
+```{r setup, include = FALSE}
+
+  knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, 
+                        fig.width  = 6 * 1.67, fig.height = 6)
+
+  load("data/data.RData")
+  
+  library(descr)
+  library(tidyverse)
+  library(viridis)
+  library(flextable)
+  library(patchwork)
+
+```
+
+```{r}
+  table(data$type)
+```
+
+
+```{r}
+  table(data$id)
+```
+There are 2 sets of cancer observations for patient 15. 
+
+```{r}
+
+  gather(data, var, value, real_z:magnitude_z) %>%
+  ggplot(aes(x = type, fill = type, y = value, color = type)) +
+    geom_violin(alpha = 0.2) +
+    geom_jitter(width = 0.1, size = 0.5) +
+    facet_wrap(~var, nrow = 1) +
+    scale_fill_viridis(guide = FALSE, discrete = TRUE, end = 0.8) +
+    scale_color_viridis(guide = FALSE, discrete = TRUE, end = 0.8) +
+    xlab("") 
+
+```
+Note the negative values. 
+
+
+Same data, log transformed. 
+```{r}
+
+  gather(data, var, value, real_z:magnitude_z) %>%
+  ggplot(aes(x = type, fill = type, y = value, color = type)) +
+    geom_violin(alpha = 0.2) +
+    geom_jitter(width = 0.1, size = 0.5) +
+    facet_wrap(~var, nrow = 1) +
+    scale_fill_viridis(guide = FALSE, discrete = TRUE, end = 0.8) +
+    scale_color_viridis(guide = FALSE, discrete = TRUE, end = 0.8) +
+    xlab("") +
+    scale_y_log10()
+
+```
+(36 negative values removed due to log transformed y axis.)
+
+
+```{r var_plot}
+
+  var_plot <- function(data, var, log = FALSE){
+
+    df <- data
+
+    if(log == TRUE){
+
+      df <- filter(df, type == "Healthy") %>%
+        select(id, {{var}}) %>%
+        group_by(id) %>%
+        summarise(mean_1 = mean(log({{var}}), na.rm = TRUE)) %>%
+        full_join(df, by = "id")
+
+      df <- filter(df, type == "Cancer") %>%
+        select(id, {{var}}) %>%
+        group_by(id) %>%
+        summarise(mean_2 = mean(log({{var}}), na.rm = TRUE)) %>%
+        full_join(df, by = "id")
+
+      g1 <- mutate(df, id = reorder(id, mean_1)) %>%
+        ggplot(aes(color = log(frequency), y = log({{var}}), x = id,
+                   group = id)) +
+        geom_point(size = 1, alpha = 0.5) +
+        scale_color_viridis("log(Freq)", trans = "reverse") +
+        geom_point(aes(y = mean_1), shape = "square", color = "white") +
+        geom_point(aes(y = mean_2), shape = "square", color = "red") +
+        facet_wrap(~type, nrow = 1) +
+        theme(panel.background = element_rect(fill = "grey40"),
+              panel.grid = element_blank(), 
+              axis.text.x = element_text(angle = 90, hjust = 1, size = 6)) +
+        xlab("")
+
+    } else{
+
+      df <- filter(df, type == "Healthy") %>%
+        select(id, {{var}}) %>%
+        group_by(id) %>%
+        summarise(mean_1 = mean({{var}}, na.rm = TRUE)) %>%
+        full_join(df, by = "id")
+
+      df <- filter(df, type == "Cancer") %>%
+        select(id, {{var}}) %>%
+        group_by(id) %>%
+        summarise(mean_2 = mean({{var}}, na.rm = TRUE)) %>%
+        full_join(df, by = "id")
+
+      g1 <- mutate(df, id = reorder(id, mean_1)) %>%
+        ggplot(aes(color = log(frequency), y = {{var}}, x = id, group = id)) +
+        geom_point(size = 1, alpha = 0.5) +
+        scale_color_viridis(guide = FALSE, "log(Freq)", trans = "reverse") +
+        geom_point(aes(y = mean_1), shape = "square", color = "white") +
+        geom_point(aes(y = mean_2), shape = "square", color = "red") +
+        facet_wrap(~type, nrow = 1) +
+        theme(panel.background = element_rect(fill = "grey40"),
+              panel.grid = element_blank(), 
+              axis.text.x = element_text(angle = 90, hjust = 1, size = 6)) +
+        xlab("")
+    }
+    return(g1)
+  }
+
+
+```
+
+```{r}
+
+  g1 <- var_plot(data, real_z)
+  g2 <- var_plot(data, real_z, TRUE)
+  
+  g1 + g2
+
+```
+
+
+
+```{r}
+
+  g1 <- var_plot(data, imaginary_z)
+  g2 <- var_plot(data, imaginary_z, TRUE)
+  
+  g1 + g2
+
+```
+
+
+```{r}
+
+  g1 <- var_plot(data, magnitude_z)
+  g2 <- var_plot(data, magnitude_z, TRUE)
+  
+  g1 + g2
+
+```
+
+```{r code_book}
+
+  print(summarytools::dfSummary(data), method = "render")
+
+```
+
+```{r sysinfo}
+
+  DescTools::SysInfo()
+
+```
