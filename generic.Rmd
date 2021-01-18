@@ -22,49 +22,14 @@ output:
   library(viridis)
   library(flextable)
   library(patchwork)
+  library(rms)
+  library(Hmisc)
+  library(knitr)
+  library(scales)
+  library(viridis)
+  library(RColorBrewer)
 
 ```
-
-```{r}
-  table(data$type)
-```
-
-
-```{r}
-  table(data$id)
-```
-There are 2 sets of cancer observations for patient 15. 
-
-```{r}
-
-  gather(data, var, value, real_z:magnitude_z) %>%
-  ggplot(aes(x = type, fill = type, y = value, color = type)) +
-    geom_violin(alpha = 0.2) +
-    geom_jitter(width = 0.1, size = 0.5) +
-    facet_wrap(~var, nrow = 1) +
-    scale_fill_viridis(guide = FALSE, discrete = TRUE, end = 0.8) +
-    scale_color_viridis(guide = FALSE, discrete = TRUE, end = 0.8) +
-    xlab("") 
-
-```
-Note the negative values. 
-
-
-Same data, log transformed. 
-```{r}
-
-  gather(data, var, value, real_z:magnitude_z) %>%
-  ggplot(aes(x = type, fill = type, y = value, color = type)) +
-    geom_violin(alpha = 0.2) +
-    geom_jitter(width = 0.1, size = 0.5) +
-    facet_wrap(~var, nrow = 1) +
-    scale_fill_viridis(guide = FALSE, discrete = TRUE, end = 0.8) +
-    scale_color_viridis(guide = FALSE, discrete = TRUE, end = 0.8) +
-    xlab("") +
-    scale_y_log10()
-
-```
-(36 negative values removed due to log transformed y axis.)
 
 
 ```{r var_plot}
@@ -132,16 +97,120 @@ Same data, log transformed.
 
 ```
 
+# Data
+
+## Pre-processing
+
+Patient 15 is the only patient with 2 sets of cancerous tissue measures, and
+both of them are much much higher in terms of impedance values at the lowest
+frequencies (demonstrated below, in comparison to two other randomly selected patients; note the log10 scale - these are very large differences). I have thus removed patient 15 for now (though the fact that both cancer samples appear unusual relative to the other patients may bear some consideration later). 
+
 ```{r}
 
-  g1 <- var_plot(data, real_z)
-  g2 <- var_plot(data, real_z, TRUE)
-  
-  g1 + g2
+  data[grepl("15", data$id) | data$id %in% c(1, 6), ] %>%
+  ggplot(aes(y = imaginary_z, x = frequency, group = patient_id, 
+             color = type)) +
+  geom_line(size = 1, alpha = 0.5) +
+  facet_wrap(~id) +
+  scale_x_continuous(labels = function(x) format(x, scientific = TRUE)) +
+  scale_y_log10(
+    breaks = scales::trans_breaks("log10", function(x) 10^x),
+    labels = scales::trans_format("log10", scales::math_format(10^.x))
+    ) +
+  theme(axis.text.x = element_text(size = 6)) +
+  scale_color_brewer(guide = FALSE, palette = "Set1") 
 
 ```
 
+```{r}
 
+  data <- filter(data, id != 15)
+
+```
+
+## Description 
+
+After the removal of this patient, the dataset now contains information on `r length(unique(data$id))` patients, each with a set of measurements taken at 50 different frequencies on both cancerous and healthy tissue (`r length(unique(data$id))` patients X `r length(unique(data$frequency))` frequencies X `r length(levels(data$type))` tissue types = 2000 total measurements). 
+
+
+### Key output values by patient and frequency
+
+#### Imaginary Z
+
+Values for each patient
+
+```{r}
+  
+  ggplot(
+    data, 
+    aes(x = frequency, y = imaginary_z, group = interaction(id, type), 
+        color = type)
+    ) + 
+  geom_line(size = 1, alpha = 0.5) +
+  facet_wrap(~id) +
+  scale_x_continuous(labels = function(x) format(x, scientific = TRUE)) +
+  scale_y_log10(
+    breaks = scales::trans_breaks("log10", function(x) 10^x),
+    labels = scales::trans_format("log10", scales::math_format(10^.x))
+    ) +
+  theme(axis.text.x = element_text(size = 6)) +
+  scale_color_brewer("", palette = "Set1") 
+
+```
+
+Superimposed values for each patient
+
+```{r}
+  
+  ggplot(
+    data, 
+    aes(x = frequency, y = imaginary_z, group = interaction(id, type), 
+        color = id)
+    ) + 
+  geom_line(size = 1, alpha = 0.5) +
+  facet_wrap(~type) +
+  scale_x_continuous(labels = function(x) format(x, scientific = TRUE)) +
+  scale_y_log10(
+    breaks = scales::trans_breaks("log10", function(x) 10^x),
+    labels = scales::trans_format("log10", scales::math_format(10^.x))
+    ) +
+  theme(axis.text.x = element_text(size = 6)) +
+  scale_color_manual(guide = FALSE, values = rep(brewer.pal(5, "Set1"), 4))
+
+```
+
+Cancer value minus healthy tissue value (note: y axis truncated at +/- 10^05)
+
+```{r}
+
+  distinct(data, id, frequency, imaginary_z_diff) %>%
+  ggplot(
+    aes(x = frequency, y = imaginary_z_diff, group = id, color = id)
+    ) + 
+  geom_line(size = 1, alpha = 0.5) +
+  geom_hline(yintercept = 0) +
+  coord_cartesian(ylim = c(-100000, 100000)) +
+  scale_x_continuous(labels = function(x) format(x, scientific = TRUE)) +
+  theme(axis.text.x = element_text(size = 6)) +
+  scale_color_manual(guide = FALSE, values = rep(brewer.pal(5, "Set1"), 4))
+
+```
+
+Distribution of values by frequency and tissue type
+
+```{r}
+
+  ggplot(data, aes(y = imaginary_z, x = interaction(type, frequency), 
+                   fill = type, color = type)) +
+    geom_violin() +
+    scale_fill_brewer("", palette = "Set1") +
+    scale_color_brewer(guide = FALSE, palette = "Set1") +
+    xlab("") +
+    scale_y_log10() +
+    theme(axis.text.x = element_blank(), 
+          panel.grid = element_blank()) 
+
+```
 
 ```{r}
 
@@ -153,14 +222,211 @@ Same data, log transformed.
 ```
 
 
+#### Real Z
+
+Values for each patient 
+
 ```{r}
 
-  g1 <- var_plot(data, magnitude_z)
-  g2 <- var_plot(data, magnitude_z, TRUE)
+  ggplot(
+    data, 
+    aes(x = frequency, y = real_z, group = interaction(id, type), 
+        color = type)
+    ) + 
+  geom_line(size = 1, alpha = 0.5) +
+  facet_wrap(~id) +
+  scale_x_continuous(labels = function(x) format(x, scientific = TRUE)) +
+  scale_y_log10(
+    breaks = scales::trans_breaks("log10", function(x) 10^x),
+    labels = scales::trans_format("log10", scales::math_format(10^.x))
+    ) +
+  theme(axis.text.x = element_text(size = 6)) +
+  scale_color_brewer("", palette = "Set1") 
+
+```
+
+Superimposed values for each patient
+
+```{r}
+
+  ggplot(
+    data, 
+    aes(x = frequency, y = real_z, group = interaction(id, type), 
+        color = id)
+    ) + 
+  geom_line(size = 1, alpha = 0.5) +
+  facet_wrap(~type) +
+  scale_x_continuous(labels = function(x) format(x, scientific = TRUE)) +
+  scale_y_log10(
+    breaks = scales::trans_breaks("log10", function(x) 10^x),
+    labels = scales::trans_format("log10", scales::math_format(10^.x))
+    ) +
+  theme(axis.text.x = element_text(size = 6)) +
+  scale_color_manual(guide = FALSE, values = rep(brewer.pal(5, "Set1"), 4))
+
+```
+
+Cancer value minus healthy tissue value (note: y axis truncated at +/- 10^05)
+
+```{r}
+
+  distinct(data, id, frequency, real_z_diff) %>%
+  ggplot(
+    aes(x = frequency, y = real_z_diff, group = id, color = id)
+    ) + 
+  geom_line(size = 1, alpha = 0.5) +
+  geom_hline(yintercept = 0) +
+  coord_cartesian(ylim = c(-100000, 100000)) +
+  scale_x_continuous(labels = function(x) format(x, scientific = TRUE)) +
+  theme(axis.text.x = element_text(size = 6)) +
+  scale_color_manual(guide = FALSE, values = rep(brewer.pal(5, "Set1"), 4))
+
+```
+
+Distribution of values by frequency and tissue type
+
+```{r}
+
+  ggplot(data, aes(y = real_z, x = interaction(type, frequency), 
+                   fill = type, color = type)) +
+    geom_violin() +
+    scale_fill_brewer("", palette = "Set1") +
+    scale_color_brewer(guide = FALSE, palette = "Set1") +
+    xlab("") +
+    scale_y_log10() +
+    theme(axis.text.x = element_blank(), 
+          panel.grid = element_blank()) 
+
+```
+
+```{r}
+
+  g1 <- var_plot(data, real_z)
+  g2 <- var_plot(data, real_z, TRUE)
   
   g1 + g2
 
 ```
+
+
+#### Magnitude z
+
+Values for each patient
+
+```{r}
+
+  ggplot(
+    data, 
+    aes(x = frequency, y = magnitude_z, group = interaction(id, type), 
+        color = type)
+    ) + 
+  geom_line(size = 1, alpha = 0.5) +
+  facet_wrap(~id) +
+  scale_x_continuous(labels = function(x) format(x, scientific = TRUE)) +
+  scale_y_log10(
+    breaks = scales::trans_breaks("log10", function(x) 10^x),
+    labels = scales::trans_format("log10", scales::math_format(10^.x))
+    ) +
+  theme(axis.text.x = element_text(size = 6)) +
+  scale_color_brewer("", palette = "Set1") 
+
+```
+
+Superimposed values for each patient 
+
+```{r}
+
+  ggplot(
+    data, 
+    aes(x = frequency, y = magnitude_z, group = interaction(id, type), 
+        color = id)
+    ) + 
+  geom_line(size = 1, alpha = 0.5) +
+  facet_wrap(~type) +
+  scale_x_continuous(labels = function(x) format(x, scientific = TRUE)) +
+  scale_y_log10(
+    breaks = scales::trans_breaks("log10", function(x) 10^x),
+    labels = scales::trans_format("log10", scales::math_format(10^.x))
+    ) +
+  theme(axis.text.x = element_text(size = 6)) +
+  scale_color_manual(guide = FALSE, values = rep(brewer.pal(5, "Set1"), 4))
+
+```
+
+Cancer value minus healthy tissue value (note: y axis truncated at +/- 10^05)
+
+```{r}
+
+  distinct(data, id, frequency, magnitude_z_diff) %>%
+  ggplot(
+    aes(x = frequency, y = magnitude_z_diff, group = id, color = id)
+    ) + 
+  geom_line(size = 1, alpha = 0.5) +
+  geom_hline(yintercept = 0) +
+  coord_cartesian(ylim = c(-100000, 100000)) +
+  scale_x_continuous(labels = function(x) format(x, scientific = TRUE)) +
+  theme(axis.text.x = element_text(size = 6)) +
+  scale_color_manual(guide = FALSE, values = rep(brewer.pal(5, "Set1"), 4))
+
+```
+
+Distribution of values by frequency and tissue type
+
+```{r}
+
+  ggplot(data, aes(y = magnitude_z, x = interaction(type, frequency), 
+                   fill = type, color = type)) +
+    geom_violin() +
+    scale_fill_brewer("", palette = "Set1") +
+    scale_color_brewer(guide = FALSE, palette = "Set1") +
+    xlab("") +
+    scale_y_log10() +
+    theme(axis.text.x = element_blank(), 
+          panel.grid = element_blank()) 
+
+```
+
+
+# Prediction models
+
+For now let's just so a simple logit and ignore the repeat samples. 
+
+```{r}
+
+  m1 <- glm(type ~ rcs(real_z, 5) * rcs(imaginary_z, 5), 
+            data = data, family = binomial)
+ 
+  data$m1_pred <- predict(m1, type = "response")
+  
+  val_m1 <- val.prob(data$m1_pred, as.numeric(data$type) - 1, 
+                     pl = FALSE) %>% round(3)
+  
+  rescale_brier <- function(x, p, ...){ 
+    format(round(1 - (x / (mean(p) * (1 - mean(p)))), digits = 2), nsmall = 2)
+  }
+  
+  b1 <- rescale_brier(val_m1["Brier"], 0.512) 
+
+```
+
+
+```{r}
+
+  kable(val_m1)
+
+```
+
+```{r}
+
+  ggplot(data, aes(x = log(real_z), y = log(imaginary_z), color = m1_pred)) +
+    geom_point() +
+    scale_color_viridis()
+
+```
+
+
+
+
 
 ```{r code_book}
 
